@@ -17,7 +17,7 @@ love.load = function(args)
   -- check arguments, should be main.lua path and then optional targets
   love.build.path = args[1]
   love.build.targets = args[2] or 'windows,macos,linux'
-
+  love.build.configLocation = args[3] or 'project/build.lua'
   -- no path, open window for dropping
   if love.build.path == nil then
     love.build.log('Error: No path given, cant package game')

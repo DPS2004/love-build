@@ -87,13 +87,13 @@ return {
     love.build.log('reading config')
 
     -- check build file exists in mounted project path
-    local build_data = love.build.readData('project/build.lua')
+    local build_data = love.build.readData(love.build.configLocation)
     if build_data == nil then
       return love.build.err('no build.lua found in root of "' .. love.build.path .. '"')
     end
 
     -- check package returns valid table
-    local opts = love.filesystem.load('project/build.lua')()
+    local opts = love.filesystem.load(love.build.configLocation)()
     if opts == nil or type(opts) ~= 'table' then
       return love.build.err('specified build.lua does not return anything')
     end
