@@ -142,6 +142,16 @@ return {
       end
       table.insert(love.build.opts.ignore, filename)
     end
+	
+	-- adjacent files
+	love.build.opts.adjacent = opts.adjacent or {}
+    for l=1,#love.build.opts.adjacent do
+      local filename = love.build.opts.adjacent[l]
+      if filename:find("/[^/]*$") ~= nil then
+        filename = filename:sub(filename:find("/[^/]*$") + 1, #filename)
+      end
+      table.insert(love.build.opts.ignore, filename)
+    end
 
     -- print options out for sense checking
     for key, value in pairs(love.build.opts) do
@@ -286,6 +296,18 @@ return {
       love.build.log('adding lib: "' .. opts.libs[l] .. '" > "/' .. filename .. '"')
       love.build.copyFile('project/' .. opts.libs[l], 'temp/' .. srcdir .. '/' .. filename)
     end
+	
+	-- copy adjacents
+    for l=1,#opts.adjacent do
+      local filename = opts.adjacent[l]
+      if filename:find("/[^/]*$") ~= nil then
+        filename = filename:sub(filename:find("/[^/]*$") + 1, #filename)
+      end
+      love.build.log('adding adjacent: "' .. opts.adjacent[l] .. '" > "/' .. filename .. '"')
+      love.build.copyFile('project/' .. opts.adjacent[l], 'temp/' .. srcdir .. '/' .. filename)
+    end
+	
+	
 
     -- zip file output, ignoring some files
     local zip = love.zip:newZip(true)
@@ -410,6 +432,16 @@ return {
       end
       love.build.log('adding lib: "' .. opts.libs[l] .. '" > "Contents/Resources/' .. filename .. '"')
       love.build.copyFile('project/' .. opts.libs[l], appcontents .. '/Resources/' .. filename)
+    end
+	
+	-- copy adjacents
+	for l=1,#opts.adjacent do
+      local filename = opts.adjacent[l]
+      if filename:find("/[^/]*$") ~= nil then
+        filename = filename:sub(filename:find("/[^/]*$") + 1, #filename)
+      end
+      love.build.log('adding adjacent: "' .. opts.adjacent[l] .. '" > "Contents/Resources/' .. filename .. '"')
+      love.build.copyFile('project/' .. opts.adjacent[l], appcontents .. '/Resources/' .. filename)
     end
 
     -- zip file output
@@ -539,6 +571,16 @@ return {
       end
       love.build.log('adding lib: "' .. opts.libs[l] .. '" > "lib/' .. filename .. '"')
       love.build.copyFile('project/' .. opts.libs[l], 'temp/' .. srcdir .. '/squashfs-root/lib/' .. filename)
+    end
+	
+	-- copy adjacents
+    for l=1,#opts.adjacent do
+      local filename = opts.adjacent[l]
+      if filename:find("/[^/]*$") ~= nil then
+        filename = filename:sub(filename:find("/[^/]*$") + 1, #filename)
+      end
+      love.build.log('adding adjacent: "' .. opts.adjacent[l] .. '" > "/' .. filename .. '"')
+      love.build.copyFile('project/' .. opts.adjacent[l], 'temp/' .. srcdir .. '/squashfs-root/' .. filename)
     end
 
     -- remove squashfs-root/love.svg
