@@ -132,7 +132,19 @@ return {
       love.build.targets = table.concat(opts.platforms, ',')
     end
     love.build.log('target platforms: "' .. love.build.targets .. '"')
-
+	
+	
+    --clean up libs
+	love.build.opts.libsPlatforms = {windows = {}, macos = {}, linux = {}}
+    love.build.opts.libs = opts.libs or {}
+	for i,v in ipairs(love.build.opts.libs) do
+		local lib, platform = v:match("(.+)?(.+)")
+		v = lib or v
+		if platform then
+			table.insert(love.build.opts.libsPlatforms[platform],lib)
+		end
+	end
+	
     -- lib entries are also ignored
     love.build.opts.libs = opts.libs or {}
     for l=1,#love.build.opts.libs do
@@ -288,13 +300,13 @@ return {
     )
 
     -- copy any libs specified into the folder
-    for l=1,#opts.libs do
-      local filename = opts.libs[l]
+    for l=1,#opts.libsPlatforms['windows'] do
+      local filename = opts.libsPlatforms['windows'][l]
       if filename:find("/[^/]*$") ~= nil then
         filename = filename:sub(filename:find("/[^/]*$") + 1, #filename)
       end
-      love.build.log('adding lib: "' .. opts.libs[l] .. '" > "/' .. filename .. '"')
-      love.build.copyFile('project/' .. opts.libs[l], 'temp/' .. srcdir .. '/' .. filename)
+      love.build.log('adding lib: "' .. opts.libsPlatforms['windows'][l] .. '" > "/' .. filename .. '"')
+      love.build.copyFile('project/' .. opts.libsPlatforms['windows'][l], 'temp/' .. srcdir .. '/' .. filename)
     end
 	
 	-- copy adjacents
@@ -425,13 +437,13 @@ return {
     end
 
     -- copy any libs specified into the app/Contents/Resources folder
-    for l=1,#opts.libs do
-      local filename = opts.libs[l]
+    for l=1,#opts.libsPlatforms['macos'] do
+      local filename = opts.libsPlatforms['macos'][l]
       if filename:find("/[^/]*$") ~= nil then
         filename = filename:sub(filename:find("/[^/]*$") + 1, #filename)
       end
-      love.build.log('adding lib: "' .. opts.libs[l] .. '" > "Contents/Resources/' .. filename .. '"')
-      love.build.copyFile('project/' .. opts.libs[l], appcontents .. '/Resources/' .. filename)
+      love.build.log('adding lib: "' .. opts.libsPlatforms['macos'][l] .. '" > "Contents/Resources/' .. filename .. '"')
+      love.build.copyFile('project/' .. opts.libsPlatforms['macos'][l], appcontents .. '/Resources/' .. filename)
     end
 	
 	-- copy adjacents
@@ -564,13 +576,13 @@ return {
     apprun:close()
 
     -- copy any libs specified into the squashfs-root/lib folder
-    for l=1,#opts.libs do
-      local filename = opts.libs[l]
+    for l=1,#opts.libsPlatforms['linux'] do
+      local filename = opts.libsPlatforms['linux'][l]
       if filename:find("/[^/]*$") ~= nil then
         filename = filename:sub(filename:find("/[^/]*$") + 1, #filename)
       end
-      love.build.log('adding lib: "' .. opts.libs[l] .. '" > "lib/' .. filename .. '"')
-      love.build.copyFile('project/' .. opts.libs[l], 'temp/' .. srcdir .. '/squashfs-root/lib/' .. filename)
+      love.build.log('adding lib: "' .. opts.libsPlatforms['linux'][l] .. '" > "' .. filename .. '"')
+      love.build.copyFile('project/' .. opts.libsPlatforms['linux'][l], 'temp/' .. srcdir .. '/squashfs-root/' .. filename)
     end
 	
 	-- copy adjacents
