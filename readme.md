@@ -3,7 +3,7 @@ An app (built in LÖVE!) for quickly packaging LÖVE games for distribution, bas
 
 The goal is to make something eventually maintained by the LÖVE team that can let new developers build their games cross-platform from their own machine in a single step - with zero dependencies and no need for VMs.
 
-*This app will build + export your game for LÖVE (.love), Windows (.exe), MacOS (.app), and Linux (.zip)!*
+*This app will build + export your game for LÖVE (.love), Windows (.exe), MacOS (.app), and Linux (.zip) - regardless of the platform you're developing on!*
 
 ![alt text](resources/preview.png)
 
@@ -20,15 +20,22 @@ return {
   name = 'SuperGame', -- name of the game for your executable
   developer = 'CoolDev', -- dev name used in metadata of the file
   output = 'dist', -- output location for your game, defaults to $SAVE_DIRECTORY
-  version = '1.1a', -- 'version' of your game, used to make a version folder in output
+  version = '1.1a', -- 'version' of your game, used to name the folder in output
   love = '11.5', -- version of LÖVE to use, must match github releases
-  ignore = {'dist', '.DS_Store'}, -- folders/files to ignore in your project
+  ignore = {'dist', 'ignoreme.txt'}, -- folders/files to ignore in your project
   icon = 'resources/icon.png', -- 256x256px PNG icon for game, will be converted for you
   
   -- optional settings:
   use32bit = false, -- set true to build windows 32-bit as well as 64-bit
   identifier = 'com.love.supergame', -- macos team identifier, defaults to game.developer.name
-  libs = {'resources/plugin.dll'} -- files to place in output directly rather than fuse
+  libs = { -- files to place in output directly rather than fuse
+    windows = {'resources/plugin.dll'}, -- can specify per platform or "all"
+    all = {'resources/license.txt'}
+  },
+  hooks = { -- hooks to run commands via os.execute before or after building
+    before_build = 'resources/preprocess.sh',
+    after_build = 'resources/postprocess.sh'
+  }
   platforms = {'windows'} -- set if you only want to build for a specific platform
   
 }
@@ -93,8 +100,9 @@ You can view the logs inside `output/version/build.log` after running the builde
 | Failed to create .lovefile                                      | Failed to create lovefile, check logs for info
 | Source download failed                                          | Failed to download release from github
 | Source file must be supplied to build this version              | Specificed version doesn't have a release on github
+| Fatal Error!                                                    | Something triggered love.errorhandler - check build.log
 
-> Note: If you want to build with 12.0 you'll need to provide the source zips yourself in the `%appdata%/love-build/cache` directory, you can download the builds from the [latest successful workflow action](https://github.com/love2d/love/actions), as the main branch on Github is on version 12.
+> Note: If you want to build with 12.0 you'll need to provide the source zips yourself in the `%appdata%/love-build/cache` directory, you can download the builds from the [latest successful workflow action](https://github.com/love2d/love/actions), as the main branch on Github is on version 12. I would recommend building with 11.5 first to see the expected files in your cache.
 
 
 ---

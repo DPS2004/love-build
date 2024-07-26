@@ -27,6 +27,7 @@ return {
   os = 'windows',
   opts = {},
   logs = {},
+  hooks = {},
   quit = false,
   queue = '',
   update_time = 0,
@@ -85,6 +86,7 @@ return {
   -- @return {nil}
   readConfig = function()
     love.build.log('reading config')
+    local start_time = love.timer.getTime()
 
     -- check build file exists in mounted project path
     local build_data = love.build.readData(love.build.configLocation)
@@ -108,6 +110,7 @@ return {
       love.build.opts.output = love.build.path .. '/' .. opts.output
     end
     love.build.opts.ignore = opts.ignore or {}
+    table.insert(love.build.opts.ignore, '.github')
     table.insert(love.build.opts.ignore, '.gitattributes')
     table.insert(love.build.opts.ignore, '.gitignore')
     table.insert(love.build.opts.ignore, '.git')
@@ -115,7 +118,7 @@ return {
     table.insert(love.build.opts.ignore, '.vs')
     table.insert(love.build.opts.ignore, '.vscode')
     love.build.opts.version = opts.version or '1.0.0'
-    love.build.opts.love = opts.love or '11.4'
+    love.build.opts.love = opts.love or '11.5'
 
     -- set default indentifier for backup if not set
     local default_idendifier = 'com.' .. 
@@ -135,13 +138,28 @@ return {
 
     -- lib entries are also ignored
     love.build.opts.libs = opts.libs or {}
-    for l=1,#love.build.opts.libs do
-      local filename = love.build.opts.libs[l]
-      if filename:find("/[^/]*$") ~= nil then
-        filename = filename:sub(filename:find("/[^/]*$") + 1, #filename)
+    for key, value in pairs(love.build.opts.libs) do
+      if key == 'windows' or key == 'macos' or key == 'linux' or key == 'all' then
+        for l=1,#value do
+          local filename = value[l]
+          if filename:find("/[^/]*$") ~= nil then
+            filename = filename:sub(filename:find("/[^/]*$") + 1, #filename)
+          end
+          table.insert(love.build.opts.ignore, filename)
+          print('lib option', filename)
+        end
+      else
+        local filename = value
+        if filename:find("/[^/]*$") ~= nil then
+          filename = filename:sub(filename:find("/[^/]*$") + 1, #filename)
+        end
+        table.insert(love.build.opts.ignore, filename)
+        print('lib option', filename)
       end
-      table.insert(love.build.opts.ignore, filename)
     end
+
+    -- hooks if used
+    love.build.hooks = opts.hooks or {}
 
     -- print options out for sense checking
     for key, value in pairs(love.build.opts) do
@@ -150,6 +168,16 @@ return {
 
     love.build.folder = string.lower(love.build.opts.name) .. '_' .. love.build.opts.version
     love.build.folder = string.gsub(love.build.folder, ' ', '_')
+
+    -- run preprocess if any 
+    if love.build.hooks.before_build then
+      love.build.log('preprocess: ' .. love.build.path .. '/' .. love.build.hooks.before_build)
+      local cmd = 'sh'
+      if love.build.os == 'windows' then cmd = 'bash' end
+      os.execute(cmd .. ' ' .. love.build.path .. '/' .. love.build.hooks.before_build .. ' ' .. love.build.path)
+    end
+
+    love.build.log('step finished in ' .. love.build.formatTime(love.timer.getTime() - start_time))
 
     love.build.queue = 'makeLovefile'
     love.build.status = 'Making Lovefile...'
@@ -162,6 +190,7 @@ return {
   -- @return {nil}
   makeLovefile = function ()
     love.build.log('making lovefile')
+    local start_time = love.timer.getTime()
 
     -- setup paths
     local opts = love.build.opts
@@ -179,7 +208,7 @@ return {
     love.build.log('ignoring: "' .. table.concat(opts.ignore, ',') .. '"')
 
     -- compress specific files/folders manually
-    local zip = love.zip:newZip(true)
+    local zip = love.zip:newZip(false)
     zip:addFolder('project', opts.ignore) -- directory contents with ignore list
     local compress, err = zip:finish(lovefile)
     if compress ~= true then
@@ -193,6 +222,7 @@ return {
     end
 
     love.build.log('created "' .. lovefile .. '"')
+    love.build.log('step finished in ' .. love.build.formatTime(love.timer.getTime() - start_time))
 
     -- what we make next depends on settings
     if love.build.targets:find('windows') then
@@ -217,6 +247,7 @@ return {
   --                            this is called automatically after a 64bit 
   -- @return {nil}
   makeWindows = function(build32)
+    local start_time = love.timer.getTime()
 
     -- decide on bit
     local wbit = 'win64'
@@ -267,6 +298,7 @@ return {
       local modified_exe = love.exedit.updateIcon('temp/' .. srcdir .. '/love.exe', 'project/' .. opts.icon)
       local srcexe = love.filesystem.openFile('temp/' .. srcdir .. '/love.exe', 'w')
       srcexe:write(modified_exe)
+      srcexe:close()
     end
 
 
@@ -278,17 +310,28 @@ return {
     )
 
     -- copy any libs specified into the folder
-    for l=1,#opts.libs do
-      local filename = opts.libs[l]
-      if filename:find("/[^/]*$") ~= nil then
-        filename = filename:sub(filename:find("/[^/]*$") + 1, #filename)
+    for key, value in pairs(opts.libs) do
+      if key == 'windows' or key == 'all' then
+        for l=1,#value do
+          local filename = value[l]
+          if filename:find("/[^/]*$") ~= nil then
+            filename = filename:sub(filename:find("/[^/]*$") + 1, #filename)
+          end
+          love.build.log('adding lib: "' .. value[l] .. '" > "/' .. filename .. '"')
+          love.build.copyFile('project/' .. value[l], 'temp/' .. srcdir .. '/' .. filename)
+        end
+      elseif key ~= 'macos' and key ~= 'linux' then
+        local filename = value
+        if filename:find("/[^/]*$") ~= nil then
+          filename = filename:sub(filename:find("/[^/]*$") + 1, #filename)
+        end
+        love.build.log('adding lib: "' .. value .. '" > "/' .. filename .. '"')
+        love.build.copyFile('project/' .. value, 'temp/' .. srcdir .. '/' .. filename)
       end
-      love.build.log('adding lib: "' .. opts.libs[l] .. '" > "/' .. filename .. '"')
-      love.build.copyFile('project/' .. opts.libs[l], 'temp/' .. srcdir .. '/' .. filename)
     end
 
     -- zip file output, ignoring some files
-    local zip = love.zip:newZip(true)
+    local zip = love.zip:newZip(false)
     local compress, err = zip:compress('temp/' .. srcdir, zipfile, {
       'love.exe', 'lovec.exe', 'changes.txt', 'readme.txt', 'love.ico'
     })
@@ -297,6 +340,7 @@ return {
     end
 
     love.build.log('built windows ' .. wbit .. ' successfully')
+    love.build.log('step finished in ' .. love.build.formatTime(love.timer.getTime() - start_time))
 
     -- what we make next depends on settings
     if build32 == nil and love.build.opts.use32bit == true then
@@ -320,6 +364,7 @@ return {
   -- @return {nil}
   makeMacOS = function()
     love.build.log('building macos')
+    local start_time = love.timer.getTime()
     
     -- get source file
     local srcfile = 'love-' .. love.build.opts.love .. '-macos.zip'
@@ -403,23 +448,35 @@ return {
     end
 
     -- copy any libs specified into the app/Contents/Resources folder
-    for l=1,#opts.libs do
-      local filename = opts.libs[l]
-      if filename:find("/[^/]*$") ~= nil then
-        filename = filename:sub(filename:find("/[^/]*$") + 1, #filename)
+    for key, value in pairs(opts.libs) do
+      if key == 'macos' or key == 'all' then
+        for l=1,#value do
+          local filename = value[l]
+          if filename:find("/[^/]*$") ~= nil then
+            filename = filename:sub(filename:find("/[^/]*$") + 1, #filename)
+          end
+          love.build.log('adding lib: "' .. value[l] .. '" > "Contents/Resources/' .. filename .. '"')
+          love.build.copyFile('project/' .. value[l], appcontents .. '/Resources/' .. filename)
+        end
+      elseif key ~= 'windows' and key ~= 'linux' then
+        local filename = value
+        if filename:find("/[^/]*$") ~= nil then
+          filename = filename:sub(filename:find("/[^/]*$") + 1, #filename)
+        end
+        love.build.log('adding lib: "' .. value .. '" > "Contents/Resources/' .. filename .. '"')
+        love.build.copyFile('project/' .. value, appcontents .. '/Resources/' .. filename)
       end
-      love.build.log('adding lib: "' .. opts.libs[l] .. '" > "Contents/Resources/' .. filename .. '"')
-      love.build.copyFile('project/' .. opts.libs[l], appcontents .. '/Resources/' .. filename)
     end
 
     -- zip file output
-    local zip = love.zip:newZip(true, true)
+    local zip = love.zip:newZip(false, true)
     local compress, err = zip:compress('temp/' .. srcdir, zipfile, {}, unzip.symlinks)
     if compress == false then
       return love.build.err('failed to zip up macos output: "' .. err .. '"')
     end
 
     love.build.log('built macos successfully')
+    love.build.log('step finished in ' .. love.build.formatTime(love.timer.getTime() - start_time))
 
     -- what we make next depends on settings
     if love.build.targets:find('linux') then
@@ -438,6 +495,7 @@ return {
   -- @return {nil}
   makeLinux = function()
     love.build.log('building linux')
+    local start_time = love.timer.getTime()
 
     -- get source file
     local srcfile = 'love-' .. love.build.opts.love .. '-x86_64.AppImage'
@@ -525,20 +583,31 @@ return {
     apprunfile = apprunfile .. 'if [ -z "$LUA_CPATH" ]; then\n'
     apprunfile = apprunfile .. '    LUA_CPATH=";"\n'
     apprunfile = apprunfile .. 'fi\n'
-    apprunfile = apprunfile .. 'export LUA_CPATH="$APPDIR/lib/lua/5.1/?.so;$LUA_CPATH"\n'
+    apprunfile = apprunfile .. 'export LUA_CPATH="$APPDIR/lib/?.so;$APPDIR/lib/lua/5.1/?.so;$LUA_CPATH"\n'
     apprunfile = apprunfile .. 'exec "$APPDIR/bin/' .. love.build.opts.name .. '" "$@"\n'
     local apprun = love.filesystem.openFile('temp/' .. srcdir .. '/squashfs-root/AppRun', 'w')
     apprun:write(apprunfile)
     apprun:close()
 
     -- copy any libs specified into the squashfs-root/lib folder
-    for l=1,#opts.libs do
-      local filename = opts.libs[l]
-      if filename:find("/[^/]*$") ~= nil then
-        filename = filename:sub(filename:find("/[^/]*$") + 1, #filename)
+    for key, value in pairs(opts.libs) do
+      if key == 'linux' or key == 'all' then
+        for l=1,#value do
+          local filename = value[l]
+          if filename:find("/[^/]*$") ~= nil then
+            filename = filename:sub(filename:find("/[^/]*$") + 1, #filename)
+          end
+          love.build.log('adding lib: "' .. value[l] .. '" > "lib/' .. filename .. '"')
+          love.build.copyFile('project/' .. value[l], 'temp/' .. srcdir .. '/squashfs-root/lib/' .. filename)
+        end
+      elseif key ~= 'macos' and key ~= 'windows' then
+        local filename = value
+        if filename:find("/[^/]*$") ~= nil then
+          filename = filename:sub(filename:find("/[^/]*$") + 1, #filename)
+        end
+        love.build.log('adding lib: "' .. value .. '" > "lib/' .. filename .. '"')
+        love.build.copyFile('project/' .. value, 'temp/' .. srcdir .. '/squashfs-root/lib/' .. filename)
       end
-      love.build.log('adding lib: "' .. opts.libs[l] .. '" > "lib/' .. filename .. '"')
-      love.build.copyFile('project/' .. opts.libs[l], 'temp/' .. srcdir .. '/squashfs-root/lib/' .. filename)
     end
 
     -- remove squashfs-root/love.svg
@@ -551,13 +620,14 @@ return {
     -- repackage binary, then concatFiles with the runtime-fuse2
 
     -- for now just zip up contents as the linux build
-    local zip = love.zip:newZip(true, true)
+    local zip = love.zip:newZip(false, true)
     local compress, err = zip:compress('temp/' .. srcdir .. '/squashfs-root', zipfile, {}, squash.symlinks)
     if compress == false then
       return love.build.err('failed to zip up linux output: "' .. err .. '"')
     end
 
     love.build.log('built linux successfully')
+    love.build.log('step finished in ' .. love.build.formatTime(love.timer.getTime() - start_time))
 
     -- all done, finish up
     love.build.queue = 'finishBuild'
@@ -598,10 +668,18 @@ return {
       end
     end
 
+    -- run postprocess if any 
+    if love.build.hooks.after_build then
+      love.build.log('postprocess: ' .. love.build.path .. '/' .. love.build.hooks.after_build)
+      local cmd = 'sh'
+      if love.build.os == 'windows' then cmd = 'bash' end
+      os.execute(cmd .. ' ' .. love.build.path .. '/' .. love.build.hooks.after_build .. ' ' .. love.build.path .. ' ' .. love.build.opts.output)
+    end
+
     -- finalise build
     love.build.status = 'Build Finished'
     local time = love.timer.getTime() - love.build.start
-    love.build.log('build finished in ' .. tostring(time) .. 's')
+    love.build.log('build finished in ' .. love.build.formatTime(time))
     love.build.dumpLogs()
 
     -- open path to output
@@ -799,6 +877,13 @@ return {
     local logdata = table.concat(love.build.logs, '\n')
     love.filesystem.write('output/' .. love.build.folder .. '/build.log', logdata)
   end,
+
+  -- @method - love.build.formatTime
+  -- @desc - formats seconds nicely
+  -- @return {string} - returns formatted number as string
+  formatTime = function(seconds)
+    return string.format("%.3f", tostring(seconds)) .. 's'
+  end
 
 
 }

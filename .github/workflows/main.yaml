@@ -1,0 +1,123 @@
+# this builds the 'example-project' game for all 3 OS's using the builder
+# we use love12 to run the builder, however the game is built with 11.5
+
+name: continuous-integration
+on: [push, pull_request]
+
+jobs:
+
+  # builder?
+  # it'd be nice to be able to build the builder for automatic uploads rather than have to do releases
+  # when I make releases locally I just do 'love ./ ./main.lua' in this repo to build the builder using itself
+  # however trying to do this in a workflow hangs indefinitely for no reason (no error logged)
+  # i have tried windows, linux and macos, all same result
+  # i have tried checking out the repo twice to have 2 different folders
+  # i have also tried doing a builder build within each OS process, same thing
+  # ultimately it's probably better to do set releases rather than always have builds
+  # but just leaving this here for the next person who wastes several hours on it
+
+  macos:
+    runs-on: macos-12
+    permissions:
+      checks: write
+      pull-requests: write
+    steps:
+    - name: Checkout
+      uses: actions/checkout@v4
+    - name: Download Love
+      run: |
+        curl -L -H "Accept: application/vnd.github+json" -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" --output love12.zip --url "https://api.github.com/repos/love2d/love/actions/artifacts/1623258183/zip"
+        7z x love12.zip -o*
+        7z x love12/love-macos.zip -o*
+    - name: Run Builder
+      run: |
+        love-macos/love.app/Contents/MacOS/love main.lua example-project/main.lua
+    - name: Check Build
+      run: |
+        cd example-project/dist/1.0.0
+        7z x ExampleGame-macos.zip -o*
+        ExampleGame-macos/ExampleGame.app/Contents/MacOS/love
+        echo "done"
+
+  windows:
+    runs-on: windows-2022
+    env: 
+      ALSOFT_CONF: resources/alsoft.conf
+    permissions:
+      checks: write
+      pull-requests: write
+    steps:
+    - name: Checkout
+      uses: actions/checkout@v4
+    # we need mesa so that we have a graphics window, which is required to
+    # generate icons using the graphics functions
+    - name: Install Mesa 
+      run: |
+        curl -L --output mesa.7z --url https://github.com/pal1000/mesa-dist-win/releases/download/23.2.1/mesa3d-23.2.1-release-msvc.7z
+        7z x mesa.7z -o*
+        powershell.exe mesa\systemwidedeploy.cmd 1
+    - name: Download Love
+      run: |
+        curl -L -H "Accept: application/vnd.github+json" -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" --output love12.zip --url "https://api.github.com/repos/love2d/love/actions/artifacts/1623262959/zip"
+        7z x love12.zip -o*
+        7z x love12/love-12.0-win64.zip -o*
+    - name: Run Builder
+      run: |
+        powershell.exe love-12.0-win64/love-12.0-win64/lovec.exe main.lua example-project/main.lua
+    - name: Check Build
+      run: |
+        cd example-project/dist/1.0.0
+        7z x ExampleGame-windows.zip -o*
+        powershell.exe ExampleGame-windows/ExampleGame.exe
+        echo "done"
+
+  linux:
+    runs-on: ubuntu-22.04
+    env:
+      ALSOFT_CONF: resources/alsoft.conf
+      DISPLAY: :99
+    steps:
+    - name: Update APT
+      run: sudo apt-get update
+    - name: Install Dependencies
+      run: |
+        sudo apt-get install --assume-yes build-essential git make cmake autoconf automake \
+                                          libtool pkg-config libasound2-dev libpulse-dev libaudio-dev \
+                                          libjack-dev libx11-dev libxext-dev libxrandr-dev libxcursor-dev \
+                                          libxfixes-dev libxi-dev libxinerama-dev libxxf86vm-dev libxss-dev \
+                                          libgl1-mesa-dev libdbus-1-dev libudev-dev libgles2-mesa-dev \
+                                          libegl1-mesa-dev libibus-1.0-dev fcitx-libs-dev libsamplerate0-dev \
+                                          libsndio-dev libwayland-dev libxkbcommon-dev libdrm-dev libgbm-dev \
+                                          libfuse2 wmctrl openbox
+    - name: Checkout Repo
+      uses: actions/checkout@v4
+    - name: Download Love
+      run: |
+        curl -L -H "Accept: application/vnd.github+json" -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" --output love12.zip --url "https://api.github.com/repos/love2d/love/actions/artifacts/1623260758/zip"
+        7z x love12.zip -o*
+        mv love12/love-*.AppImage love12/love12.AppImage
+        ls love12
+        chmod +x love12/love12.AppImage
+    - name: Start xvfb and openbox
+      run: |
+        echo "Starting XVFB on $DISPLAY"
+        Xvfb $DISPLAY -screen 0, 360x240x24 &
+        echo "XVFBPID=$!" >> $GITHUB_ENV
+        # wait for xvfb to startup (3s is the same amount xvfb-run waits by default)
+        sleep 3
+        openbox &
+        echo "OPENBOXPID=$!" >> $GITHUB_ENV
+    - name: Run Builder
+      run: |
+        love12/love12.AppImage main.lua example-project/main.lua
+    - name: Check Build
+      run: |
+        ls example-project/dist/1.0.0
+        7z x -y example-project/dist/1.0.0/ExampleGame-linux.zip
+        ./AppRun
+    - name: Stop xvfb and openbox
+      # should always stop xvfb and openbox even if other steps failed
+      if: always()
+      run: |
+        kill $XVFBPID
+        kill $OPENBOXPID
