@@ -372,6 +372,14 @@ love.zip = {
       local ignored = false
       for i=1,#ignore do
         if ignore[i] == item then ignored = true end
+        --if ignore[i] starts with /, it should be treated as an absolute path.
+        local absolute = false
+        local ignoredPath = ignore[i]
+        if string.sub(ignoredPath,1,1) == '/' then
+          ignoredPath = string.sub(ignoredPath,2)
+          absolute = true
+        end
+        if ((not absoute) and ignoredPath == item) or (absolute and ignoredPath == _folder .. item) then ignored = true end
       end
       if ignored == false then
         local info = love.filesystem.getInfo(dir .. '/' .. files[f])
