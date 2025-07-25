@@ -165,22 +165,23 @@ love.zip = {
       local extraattr =           string.sub(ebytes, 39, 42)
       local offsetpos =           self:_readUInt(ebytes, 43, 4)
       local actualname =          string.sub(content, offsetpos + 31, offsetpos + 30 + filenamesize)
+      local extracommentlen =     self:_readUInt(ebytes, 33, 2)
 
       -- for each file we have the offset, the length of the file (compressed + 30 + filename)
       -- so we just need to pull that as one string to get our actual data
-      local fileoffset = offsetpos + 31 + #actualname + extrasize
+      local fileoffset = offsetpos + 31 + #actualname + extrasize + extracommentlen
       local filedata =   string.sub(content, fileoffset, fileoffset + compressedsize - 1)
       local compressed = filedata
       -- if we failed to compress we dont recognise the format 
       if filedata ~= '' and compressionformat == 8 then
-        local ok, _ = pcall(love.data.decompress, 'string', 'deflate', filedata)
+        local ok, perr = pcall(love.data.decompress, 'string', 'deflate', filedata)
         if ok == false then
           compressed = filedata
         else
           compressed = love.data.decompress('string', 'deflate', filedata)
         end
         if ok == false then
-          print('love.zip > WARN: failed to decompressed file', compressionformat, actualname)
+          print('love.zip > WARN: failed to decompressed file', compressionformat, actualname, perr)
         end
       end
 
@@ -451,15 +452,21 @@ love.zip = {
     -- addFile/addFolder you specify the path in :finish()
     if self.path == '' then self.path = _path end
 
+    -- write empty first
+    love.filesystem.write(self.path, '')
+
     -- add file headers first
-    local zipdata = ''
+    local write_error = ''
+    local zipdatasize = 0
     for f=1,#self.files do
-      zipdata = zipdata .. self.files[f].zipdata
+      local suc, err = love.filesystem.append(self.path, self.files[f].zipdata)
+      zipdatasize = zipdatasize + self.files[f].zipdatasize
+      if not suc then write_error = err; break end
     end
 
     -- add central directory entries for each file
     -- https://en.wikipedia.org/wiki/ZIP_(file_format)
-    local centraldir = ''
+    local centraldirsize = 0
     for f=1,#self.files do
       local file = self.files[f]
       local extra_attr = '    '
@@ -467,6 +474,7 @@ love.zip = {
       if file.extra ~= '' then
         extra_attr = love.data.pack('string', '<I4', file.extra)
       end
+      local centraldir = ''
       centraldir = centraldir .. 'PK'                              -- header signature, 4 bytes, 0x02014b50 
       centraldir = centraldir .. ''                                -- version made by, 4 bytes, just used unix
       centraldir = centraldir .. ' '                                -- version needed, 4 bytes, 20 > 2.0
@@ -485,6 +493,9 @@ love.zip = {
       centraldir = centraldir .. extra_attr                           -- external attributes, 4 bytes, empty
       centraldir = centraldir .. self:_intToBytes(file.offset, 4)     -- offset of local header, 4 bytes
       centraldir = centraldir .. file.filename                        -- file name (variable size)
+      centraldirsize = centraldirsize + #centraldir
+      local suc, err = love.filesystem.append(self.path, centraldir)
+      if not suc then write_error = err; break end
     end
 
     -- add central directory footer
@@ -494,19 +505,20 @@ love.zip = {
     endcentral = endcentral .. '  '                           -- number of the disk with the start of the central directory, 2 bytes, empty / 0
     endcentral = endcentral .. self:_intToBytes(#self.files,2)  -- total number of entries on this disk, 2 bytes, empty / 0
     endcentral = endcentral .. self:_intToBytes(#self.files,2)  -- total number of entries in the central directory, 2 bytes
-    endcentral = endcentral .. self:_intToBytes(#centraldir,4)  -- size of the central directory, 4 bytes
-    endcentral = endcentral .. self:_intToBytes(#zipdata,4)     -- offset of start of central directory, 4 bytes
+    endcentral = endcentral .. self:_intToBytes(centraldirsize,4)  -- size of the central directory, 4 bytes
+    endcentral = endcentral .. self:_intToBytes(zipdatasize,4)     -- offset of start of central directory, 4 bytes
     endcentral = endcentral .. '  '                           -- zip file comment length, 2 bytes
+    local suc, err = love.filesystem.append(self.path, endcentral)
+    if not suc then write_error = err; end
 
     -- write full zip data to file
-    local suc, err = love.filesystem.write(self.path, zipdata .. centraldir .. endcentral)
     self.end_time = love.timer.getTime()
-    if suc == true then
+    if write_error == '' then
       print('love.zip > finished compression in ' .. tostring(self.end_time - self.start_time) .. 's')
       return true, nil
     else
-      print('love.zip > ERROR: failed to write final zip: "' .. err .. '"')
-      return nil, err
+      print('love.zip > ERROR: failed to write final zip: "' .. write_error .. '"')
+      return nil, write_error
     end
 
   end,
@@ -571,6 +583,7 @@ love.zip = {
     table.insert(self.files, {
       offset = self.offset + 0,
       zipdata = zipdata,
+      zipdatasize = #zipdata,
       filename = filename,
       content = content,
       extra = extraattr or '',

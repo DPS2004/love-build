@@ -18,12 +18,13 @@ require('libs.love-icon')
 
 love.exedit = {
 
-  updateIcon = function(exe_file, image_file)
+  updateIcon = function(exe_file, image_file, debug_mode)
 
-    print('love.exedit > modiying exe file')
+    print('love.exedit > modiying exe file', exe_file)
 
     -- read the data from the file and clone it for later
-    local data = love.filesystem.read(exe_file)
+    local data, err = love.filesystem.read(exe_file)
+    print(data, err)
     local new_data = data .. ''
 
     -- if exe file doesnt start with PE it prob has a dos stub
@@ -32,6 +33,12 @@ love.exedit = {
     if data:sub(1, 2) ~= 'PE' then
       poffset = love.exedit._readUInt(data, 61, 2)
     end
+    for d=1,256 do
+      local prod = data:sub(d, d+1)
+      if prod == 'PE' then print('found PE at ', d, d+1) end
+    end
+
+    
 
     -- get the PE data using the PE header
     local pdata = data:sub(poffset+1, #data)
@@ -241,16 +248,113 @@ love.exedit = {
               local lvl3_entry = lvl2_entry.SubDirectory.Entries[l3]
               --print('love.exedit >     DATA_ENTRY', l2, lvl3_entry.Name, tostring(#lvl3_entry.Data))
               if lvl1_type == 'VERSION' then
-                print('love.exedit >     VERSION_INFO')
 
-                -- @TODO read out version info and then rewrite as needed
+                -- first check the version info header
                 -- https://learn.microsoft.com/en-us/windows/win32/menurc/vs-versioninfo
                 local vlength =       love.exedit._readUInt(lvl3_entry.Data, 1, 2)
-                local vvallen =       love.exedit._readUInt(lvl3_entry.Data, 3, 2)
-                local vtype =         love.exedit._readUInt(lvl3_entry.Data, 4, 2)
-                local vkey =          lvl3_entry.Data:sub(6, 6+29) -- VS_VERSION_INFO but WCHAR so *2 == 30 bytes
-                local vpad =          love.exedit._readUInt(lvl3_entry.Data, 36, 2)
-                local fixedfileinfo = love.exedit._readDataType(lvl3_entry.Data, 38+vpad, 'FIXED_FILE_INFO')
+                local vvallen =       love.exedit._readUInt(lvl3_entry.Data, 3, 2) -- 52 if we have VS_FIXEDFILEINFO otherwise 0
+                local vtype =         love.exedit._readUInt(lvl3_entry.Data, 5, 2) -- 0, binary data, 1 text data
+                local vkey =          lvl3_entry.Data:sub(7, 7+29) -- "VS_VERSION_INFO" but WCHAR so *2 == 30 bytes
+                local vpad =          love.exedit._readUInt(lvl3_entry.Data, 37, 2) -- padding to add for VS_FIXEDFILEINFO
+                local fixedfileinfo = love.exedit._readDataType(lvl3_entry.Data, 39+vpad, 'FIXED_FILE_INFO')
+                local vpad2 =         love.exedit._readUInt(lvl3_entry.Data, 39+vpad+vvallen, 2)
+                print('love.exedit >     VERSION_INFO', vkey)
+
+                -- after the second padding is a list of 1 or more StringFileInfo or VarFileInfo objs
+                -- in love's case this is just 1 stringfileinfo then 1 varfileinfo
+                -- https://learn.microsoft.com/en-us/windows/win32/menurc/stringfileinfo
+                local sfi_start = 39+vpad+vvallen+2+vpad2
+                local stringfileinfo = {
+                  wLength = love.exedit._readUInt(lvl3_entry.Data, sfi_start, 2),
+                  wValueLength = love.exedit._readUInt(lvl3_entry.Data, sfi_start+2, 2),
+                  wType = love.exedit._readUInt(lvl3_entry.Data, sfi_start+4, 2), -- will be 1, as love uses text data for the info
+                  szKey =  lvl3_entry.Data:sub(sfi_start+6, sfi_start+35), -- 'StringFileInfo'
+                  padding = love.exedit._readUInt(lvl3_entry.Data, sfi_start+36, 2)
+                }
+                local vfi_start = sfi_start+stringfileinfo.wLength-2 -- -2 or +1 or +2?
+                local varfileinfo = {
+                  wLength = love.exedit._readUInt(lvl3_entry.Data, vfi_start, 2),
+                  wValueLength = love.exedit._readUInt(lvl3_entry.Data, vfi_start+2, 2),
+                  wType = love.exedit._readUInt(lvl3_entry.Data, vfi_start+4, 2), -- will be 1, as love uses text data for the info
+                  szKey =  lvl3_entry.Data:sub(vfi_start+6, vfi_start+35), -- 'VarFileInfo'
+                  padding = love.exedit._readUInt(lvl3_entry.Data, vfi_start+36, 2)
+                }
+                -- check things that should always be asserted
+                if stringfileinfo.wValueLength == 0 and varfileinfo.wValueLength == 0 then
+                  print('love.exedit >       StringFileInfo', stringfileinfo.szKey)
+                  print('love.exedit >       VarFileInfo', varfileinfo.szKey)
+
+                  local stringtabledata = lvl3_entry.Data:sub(sfi_start, sfi_start+stringfileinfo.wLength-1)
+                  if not debug_mode then love.filesystem.write('testing2', stringtabledata) end
+                  local st_start = 37
+                  --if not debug_mode then love.filesystem.write('testing2', stringtabledata) end
+                  -- now we need to get the actual stringtable under stringfileinfo for the data
+                  local stringtable = {
+                    wLength = love.exedit._readUInt(stringtabledata, st_start, 2),
+                    wValueLength = love.exedit._readUInt(stringtabledata, st_start+2, 2),
+                    wType = love.exedit._readUInt(stringtabledata, st_start+4, 2),
+                    -- windows docs list this as a WCHAR 8-digit hexadecimal number so 16 bytes
+                    szKey = stringtabledata:sub(st_start+6, st_start+21),
+                    padding = love.exedit._readUInt(stringtabledata, st_start+22, 2),
+                  }
+                  print('love.exedit >         StringTable', stringtable.wLength, stringtable.wValueLength, stringtable.wType, stringtable.szKey, stringtable.padding)
+
+                  if stringtable.wValueLength == 0 and stringtable.wType == 1 then
+                    -- psych! we have to go another level deeper for the actual string :)
+                    -- we also just have to loop through the data as we have no start/stop just the length of the stringtable 
+                    if debug_mode then
+                      love.exedit._readStringTable(stringtabledata, st_start+24, stringtable.wLength-24, {})
+                    else
+
+                      -- we replace the StringTable with our own table containing the data 
+                      -- set by the user 
+                      local dname = love.exedit._writeWord(love.build.opts.name .. ' by ' .. love.build.opts.developer)
+                      local dver = love.exedit._writeWord(love.build.opts.version)
+                      local newdesc = stringtabledata:sub(1, 37+23)
+
+                      -- @TODO
+                      -- using FileVersion or ProductVersion keywords doesnt actually overwrite the version shown in the tooltip of the exe
+                      -- not sure where that version comes from, must be set somewhere else
+                      -- i think possibly the fixedfileinfo
+--
+                      newdesc = newdesc .. love.data.pack('string', '<i2', 38 + 4 + #dname) -- length of whole string obj
+                      newdesc = newdesc .. love.data.pack('string', '<i2', #dname/2) -- length of actual data in WORD (string len/2)
+                      newdesc = newdesc .. love.data.pack('string', '<i2', 1) -- type 1 (text)
+                      newdesc = newdesc .. 'F i l e D e s c r i p t i o n ' -- keyword
+                      newdesc = newdesc .. love.data.pack('string', '<i2', 0) -- padding (0)
+                      newdesc = newdesc .. '  ' .. dname .. '  '
+                      print('love.exedit >         String', 'FileDescription', dname, #dname)
+--
+                      newdesc = newdesc .. love.data.pack('string', '<i2', 30 + 4 + #dver) -- length of whole string obj
+                      newdesc = newdesc .. love.data.pack('string', '<i2', #dver/2) -- length of actual data in WORD (string len/2)
+                      newdesc = newdesc .. love.data.pack('string', '<i2', 1) -- type 1 (text)
+                      newdesc = newdesc .. 'F i l e V e r s i o n ' -- keyword
+                      newdesc = newdesc .. love.data.pack('string', '<i2', 0) -- padding (0)
+                      newdesc = newdesc .. '  ' .. dver .. '  '
+                      print('love.exedit >         String', 'FileVersion', dver, #dver)
+--
+                      newdesc = newdesc .. love.data.pack('string', '<i2', 36 + 4 + #dver) -- length of whole string obj
+                      newdesc = newdesc .. love.data.pack('string', '<i2', #dver/2) -- length of actual data in WORD (string len/2)
+                      newdesc = newdesc .. love.data.pack('string', '<i2', 1) -- type 1 (text)
+                      newdesc = newdesc .. 'P r o d u c t V e r s i o n ' -- keyword
+                      newdesc = newdesc .. love.data.pack('string', '<i2', 0) -- padding (0)
+                      newdesc = newdesc .. '  ' .. dver .. '  '
+                      print('love.exedit >         String', 'ProductVersion', dver, #dver)
+
+                      local padding = #stringtabledata - #newdesc
+                      newdesc = newdesc .. string.rep(' ', padding)
+                      print('love.exedit >         Space remaining:', padding)
+
+                      local prefix = new_data:sub(1, rsrc_data_index+lvl3_entry.Position-2)
+                      local newdata = lvl3_entry.Data:sub(1, sfi_start-1) .. newdesc .. lvl3_entry.Data:sub(sfi_start+stringfileinfo.wLength-1, lvl3_entry.DataSize-1)
+                      love.filesystem.write('testing', newdesc)
+                      local suffix = new_data:sub(rsrc_data_index+lvl3_entry.Position-2+lvl3_entry.DataSize+1, #new_data)
+                      new_data = prefix .. newdata .. suffix
+                    
+                    end
+                  end
+                end
+
 
               end
 
@@ -265,7 +369,7 @@ love.exedit = {
                     if gi_entry ~= nil then
                       local gi_size = math.abs(gi_entry.Width)
                       if gi_size == 0 then gi_size = 256 end -- only stores 0-255, cant have 0 so 256 is 0
-                      print('love.exedit >       GROUP_ICON_ENTRY', tostring(gi_size) .. 'px', gi_entry.Id, gi_entry.BytesInRes)
+                      print('love.exedit >       GROUP_ICON_ENTRY', tostring(gi_size) .. 'px', gi_entry.Id, gi_entry.BytesInRes, offset)
                     end
                   end
                 end
@@ -278,17 +382,27 @@ love.exedit = {
               -- if we want to do this properly, we will not only need to update the GROUP_ICON
               -- but ALL resource headers, and section headers because all positions will change
               -- we'll also need to implement and recalc the checksum from the COFF
+
+              -- this will have to be done at some point cos there's not much room anymore
               if lvl1_type == 'ICON' then
-                local newdata = ico_icon:_resize(ico_img, ico_sizes[l2])
-                local padding = lvl3_entry.DataSize - newdata:getSize()
+                local newdata = ico_icon:_resize(ico_img, ico_sizes[l2]):getString()
+                local padding = lvl3_entry.DataSize - #newdata
+                if #newdata > lvl3_entry.DataSize then
+                  print('love.exedit >       WARN: icon png bigger, reducing', ico_sizes[l2], lvl3_entry.DataSize, #newdata)
+                  newdata = ico_icon:_resize(ico_img, ico_sizes[l2]*0.75):getString()
+                  padding = lvl3_entry.DataSize - #newdata
+                end
+                if #newdata > lvl3_entry.DataSize then
+                  print('love.exedit >       WARN: icon png bigger than available size', ico_sizes[l2], lvl3_entry.DataSize, #newdata)
+                end
                 if padding < 0 then
-                  newdata = new_data:sub(1, lvl3_entry.DataSize)
+                  newdata = newdata:sub(1, lvl3_entry.DataSize)
                   padding = 0
                 end
                 local prefix = new_data:sub(1, rsrc_data_index+lvl3_entry.Position-2)
-                local newimg = newdata:getString() .. string.rep(' ', padding)
+                local newimg = newdata .. string.rep(' ', padding)
                 local suffix = new_data:sub(rsrc_data_index+lvl3_entry.Position-2+lvl3_entry.DataSize+1, #new_data)
-                print('love.exedit >       ICON_ENTRY', ico_sizes[l2], newdata:getSize(), lvl3_entry.DataSize)
+                print('love.exedit >       ICON_ENTRY', rsrc_data_index+lvl3_entry.Position-2, ico_sizes[l2], #newdata, lvl3_entry.DataSize, padding)
                 new_data = prefix .. newimg .. suffix
               end
 
@@ -404,11 +518,51 @@ love.exedit = {
     return result
   end,
 
+  -- reads the strings from a stringtable
+  -- mainly just used for debugging stuff to reverse engineer
+  _readStringTable = function(data, offset, total, results)
+    local str_start = offset
+    local sz_size = 30
+    if total == 442 then sz_size = 22 end
+    if total == 394 then sz_size = 22 end -- CompanyName
+    if total == 308 then sz_size = 28 end -- LegalCopyright
+    local str = {
+      wLength = love.exedit._readUInt(data, str_start, 2),
+      wValueLength = love.exedit._readUInt(data, str_start+2, 2),
+      wType = love.exedit._readUInt(data, str_start+4, 2),
+      szKey = data:sub(str_start+6, str_start+6+sz_size-1),
+      padding = love.exedit._readUInt(data, str_start+6+sz_size, 2),
+    }
+    local strv = data:sub(str_start+7+sz_size+str.padding, str_start+7+sz_size+str.padding+(str.wValueLength*2)-1)
+    local realKey = str.szKey:gsub(' ', '')
+    print('love.exedit >           String', str.wLength, str.wValueLength, str.wType, str.szKey, realKey, #realKey, str.padding, strv, #strv)
+    results[str.szKey] = strv
+    total = total - str.wLength
+    if total > 0 and str.wLength > 0 then
+      love.exedit._readStringTable(data, offset+str.wLength, total, results)
+    else
+      return results
+    end
+    
+  end,
+ 
+ 
   -- reads the data from a given index as a UInt
   _readUInt = function(data, index, size)
     return love.data.unpack('<i' .. tostring(size), data:sub(index, index + (size-1)))
   end,
 
+  -- turns a string into a windows WORD
+  _writeWord = function(str)
+    local word = ''
+    for i = 1, #str do
+      local c = str:sub(i,i)
+      word = word .. c .. ' '
+    end
+    return word
+  end,
+
+ 
   -- datatypes to use with readDataType
   _DATA_TYPES = {
     RESOURCE_DIRECTORY = {
