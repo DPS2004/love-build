@@ -153,7 +153,7 @@ return {
       if key == 'windows' or key == 'macos' or key == 'linux' or key == 'steamdeck' or key == 'all' then
         for l=1,#value do
           local filename = value[l]
-          if filename:find("/[^/]*$") ~= nil then
+          if filename:find("/[^/]*$") ~= nil and string.sub(filename,1,1) ~= '/' then
             filename = filename:sub(filename:find("/[^/]*$") + 1, #filename)
           end
           table.insert(love.build.opts.ignore, filename)
