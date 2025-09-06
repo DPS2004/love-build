@@ -511,8 +511,8 @@ return {
           if filename:find("/[^/]*$") ~= nil then
             filename = filename:sub(filename:find("/[^/]*$") + 1, #filename)
           end
-          love.build.log('adding lib: "' .. value[l] .. '" > "Contents/MacOS/' .. filename .. '"')
-          love.build.copyFile('project/' .. value[l], appcontents .. '/MacOS/' .. filename)
+          love.build.log('adding lib: "' .. value[l] .. '" > "Contents/Resources/' .. filename .. '"')
+          love.build.copyFile('project/' .. value[l], appcontents .. '/Resources/' .. filename)
           love.build.copyFile('project/' .. value[l], appcontents .. '/Resources/' .. filename)
         end
       elseif key ~= 'windows' and key ~= 'linux' and key ~= 'steamdeck' then
@@ -520,8 +520,8 @@ return {
         if filename:find("/[^/]*$") ~= nil then
           filename = filename:sub(filename:find("/[^/]*$") + 1, #filename)
         end
-        love.build.log('adding lib: "' .. value .. '" > "Contents/MacOS/' .. filename .. '"')
-        love.build.copyFile('project/' .. value, appcontents .. '/MacOS/' .. filename)
+        love.build.log('adding lib: "' .. value .. '" > "Contents/Resources/' .. filename .. '"')
+        love.build.copyFile('project/' .. value, appcontents .. '/Resources/' .. filename)
         love.build.copyFile('project/' .. value, appcontents .. '/Resources/' .. filename)
       end
     end
