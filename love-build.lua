@@ -168,6 +168,27 @@ return {
         print('lib option', filename)
       end
     end
+	
+    love.build.opts.bin = opts.bin or {}
+    for key, value in pairs(love.build.opts.bin) do
+      if key == 'windows' or key == 'macos' or key == 'linux' or key == 'steamdeck' or key == 'all' then
+        for l=1,#value do
+          local filename = value[l]
+          if filename:find("/[^/]*$") ~= nil and string.sub(filename,1,1) ~= '/' then
+            filename = filename:sub(filename:find("/[^/]*$") + 1, #filename)
+          end
+          table.insert(love.build.opts.ignore, filename)
+          print('bin option', filename)
+        end
+      else
+        local filename = value
+        if filename:find("/[^/]*$") ~= nil then
+          filename = filename:sub(filename:find("/[^/]*$") + 1, #filename)
+        end
+        table.insert(love.build.opts.ignore, filename)
+        print('bin option', filename)
+      end
+    end
 
     -- hooks if used
     love.build.hooks = opts.hooks or {}
@@ -372,6 +393,27 @@ return {
         love.build.copyFile('project/' .. value, 'temp/' .. srcdir .. '/' .. filename)
       end
     end
+	
+	-- Same, but for bin files
+    for key, value in pairs(opts.bin) do
+      if key == 'windows' or key == 'all' then
+        for l=1,#value do
+          local filename = value[l]
+          if filename:find("/[^/]*$") ~= nil then
+            filename = filename:sub(filename:find("/[^/]*$") + 1, #filename)
+          end
+          love.build.log('adding bin file: "' .. value[l] .. '" > "/' .. filename .. '"')
+          love.build.copyFile('project/' .. value[l], 'temp/' .. srcdir .. '/' .. filename)
+        end
+      elseif key ~= 'macos' and key ~= 'linux' and key ~= 'steamdeck' then
+        local filename = value
+        if filename:find("/[^/]*$") ~= nil then
+          filename = filename:sub(filename:find("/[^/]*$") + 1, #filename)
+        end
+        love.build.log('adding bin file: "' .. value .. '" > "/' .. filename .. '"')
+        love.build.copyFile('project/' .. value, 'temp/' .. srcdir .. '/' .. filename)
+      end
+    end
 
     -- make config file directly in source
     local config_file = 'return {\n' ..
@@ -521,6 +563,28 @@ return {
           filename = filename:sub(filename:find("/[^/]*$") + 1, #filename)
         end
         love.build.log('adding lib: "' .. value .. '" > "Contents/Resources/' .. filename .. '"')
+        love.build.copyFile('project/' .. value, appcontents .. '/Resources/' .. filename)
+        love.build.copyFile('project/' .. value, appcontents .. '/Resources/' .. filename)
+      end
+    end
+	--same for bins
+	for key, value in pairs(opts.bin) do
+      if key == 'macos' or key == 'all' then
+        for l=1,#value do
+          local filename = value[l]
+          if filename:find("/[^/]*$") ~= nil then
+            filename = filename:sub(filename:find("/[^/]*$") + 1, #filename)
+          end
+          love.build.log('adding bin file: "' .. value[l] .. '" > "Contents/Resources/' .. filename .. '"')
+          love.build.copyFile('project/' .. value[l], appcontents .. '/Resources/' .. filename)
+          love.build.copyFile('project/' .. value[l], appcontents .. '/Resources/' .. filename)
+        end
+      elseif key ~= 'windows' and key ~= 'linux' and key ~= 'steamdeck' then
+        local filename = value
+        if filename:find("/[^/]*$") ~= nil then
+          filename = filename:sub(filename:find("/[^/]*$") + 1, #filename)
+        end
+        love.build.log('adding bin file: "' .. value .. '" > "Contents/Resources/' .. filename .. '"')
         love.build.copyFile('project/' .. value, appcontents .. '/Resources/' .. filename)
         love.build.copyFile('project/' .. value, appcontents .. '/Resources/' .. filename)
       end
@@ -679,6 +743,27 @@ return {
         end
         love.build.log('adding lib: "' .. value .. '" > "lib/' .. filename .. '"')
         love.build.copyFile('project/' .. value, 'temp/' .. srcdir .. '/squashfs-root/lib/' .. filename)
+      end
+    end
+	
+    -- now for bins, which go in a different dir on linux
+    for key, value in pairs(opts.bin) do
+      if key == 'linux' or key == 'all' then
+        for l=1,#value do
+          local filename = value[l]
+          if filename:find("/[^/]*$") ~= nil then
+            filename = filename:sub(filename:find("/[^/]*$") + 1, #filename)
+          end
+          love.build.log('adding bin file: "' .. value[l] .. '" > "bin/' .. filename .. '"')
+          love.build.copyFile('project/' .. value[l], 'temp/' .. srcdir .. '/squashfs-root/bin/' .. filename)
+        end
+      elseif key ~= 'macos' and key ~= 'windows' and key ~= 'steamdeck' then
+        local filename = value
+        if filename:find("/[^/]*$") ~= nil then
+          filename = filename:sub(filename:find("/[^/]*$") + 1, #filename)
+        end
+        love.build.log('adding bin file: "' .. value .. '" > "bin/' .. filename .. '"')
+        love.build.copyFile('project/' .. value, 'temp/' .. srcdir .. '/squashfs-root/bin/' .. filename)
       end
     end
 
