@@ -984,10 +984,27 @@ return {
   -- @param {string} to - path of the new file to make
   -- @return {boolean} - returns true if succeeded, else returns false
   copyFile = function(from, to)
-    local from_data = love.build.readData(from)
-    if from_data == nil then return false end
+    local from_data = love.build.readData(from,true)
+    if from_data == nil then 
+		love.build.log('dps hack: geting info folder ' .. from)
+		local info = love.filesystem.getInfo(from)
+		if info.type == 'directory' then
+			love.build.log('dps hack: copying folder ' .. from)
+			love.filesystem.createDirectory(to)
+			local folderFiles = love.filesystem.getDirectoryItems(from)
+			for i,v in ipairs(folderFiles) do
+			
+				love.build.copyFile(from..'/'..v,to..'/'..v)
+			end
+			return true
+		else
+			love.build.log('dps hack: UH OH. ITS NOT A DIR. ' .. from)
+			return false
+		end
+	end
     local to_file, err = love.filesystem.openFile(to, 'w')
     if to_file == nil then
+			love.build.log('dps hack: UH OH. TO IS NIL. ' .. to)
       return false
     end
     local write = to_file:write(from_data)
